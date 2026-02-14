@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      width: 100%;
+      height: auto;
+      max-width: 600px;
+      border: 2px solid #0f0;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gridCanvas" width="600" height="800"></canvas>
+
+  <!-- Helper de Twitch Extensions -->
+  <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+
+  <script>
+    (function() {
+      // Configuración de la cuadrícula (igual que en el juego)
+      const GRID_COLS = 26; // A-Z
+      const GRID_ROWS = 33; // 1-33
+      const canvas = document.getElementById('gridCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Dibuja la cuadrícula (copia del estilo del juego)
+      function drawGrid() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 1;
+
+        const cellW = canvas.width / GRID_COLS;
+        const cellH = canvas.height / GRID_ROWS;
+
+        // Líneas verticales
+        for (let c = 0; c <= GRID_COLS; c++) {
+          ctx.beginPath();
+          ctx.moveTo(c * cellW, 0);
+          ctx.lineTo(c * cellW, canvas.height);
+          ctx.stroke();
+        }
+
+        // Líneas horizontales
+        for (let r = 0; r <= GRID_ROWS; r++) {
+          ctx.beginPath();
+          ctx.moveTo(0, r * cellH);
+          ctx.lineTo(canvas.width, r * cellH);
+          ctx.stroke();
+        }
+
+        // Letras (A-Z) en la parte superior
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let c = 0; c < GRID_COLS; c++) {
+          ctx.fillText(String.fromCharCode(65 + c), c * cellW + cellW/2, 4);
+        }
+
+        // Números (1-33) en el borde izquierdo
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let r = 0; r < GRID_ROWS; r++) {
+          ctx.fillText(r + 1, cellW - 6, r * cellH + cellH/2);
+        }
+      }
+
+      drawGrid();
+
+      // Variables para almacenar datos del viewer y del canal
+      let channelId = null;
+      let chatToken = null;
+      let viewerId = null;
+      let clientId = null; // Se reemplazará con el Client ID de la extensión
+
+      // Escuchar el evento de autorización de Twitch
+      Twitch.ext.onAuthorized((auth) => {
+        // auth.channelId es el ID del canal (tu canal)
+        channelId = auth.channelId;
+        // auth.token es el JWT del viewer (no sirve para chat, pero podemos obtener el viewer después)
+        console.log('Autorizado, channelId:', channelId);
+      });
+
+      // El objeto viewer proporciona el token con los scopes solicitados
+      Twitch.ext.viewer.on('authorized', () => {
+        // Twitch.ext.viewer.helixToken es el token que necesitamos para la API de chat
+        chatToken = Twitch.ext.viewer.helixToken;
+        viewerId = Twitch.ext.viewer.id;
+        console.log('Viewer autorizado, token obtenido');
+      });
+
+      // Función para enviar mensaje al chat usando la API de Twitch
+      async function sendChatMessage(message) {
+        if (!channelId || !chatToken || !viewerId) {
+          console.error('Faltan datos para enviar mensaje');
+          alert('La extensión no está completamente autorizada. Por favor, recarga la página.');
+          return;
+        }
+
+        // El Client ID lo obtienes del panel de desarrollador de Twitch
+        // Reemplázalo con el tuyo (más abajo se indica dónde encontrarlo)
+        const CLIENT_ID = 'p044zcurd8w9vn2fjcd5fw13o7o205'; // <-- CAMBIA ESTO
+
+        const url = 'https://api.twitch.tv/helix/chat/messages';
+        const body = {
+          broadcaster_id: channelId,
+          sender_id: viewerId,
+          message: message
+        };
+
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${chatToken}`,
+              'Client-Id': CLIENT_ID,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error al enviar mensaje:', response.status, errorText);
+            alert('Error al enviar el comando. Asegúrate de que la extensión tenga permiso para enviar mensajes.');
+          } else {
+            console.log('Comando enviado al chat:', message);
+            // Opcional: feedback visual breve
+            canvas.style.borderColor = '#ff0';
+            setTimeout(() => canvas.style.borderColor = '#0f0', 200);
+          }
+        } catch (error) {
+          console.error('Error de red:', error);
+        }
+      }
+
+      // Manejador de clics en el canvas
+      canvas.addEventListener('click', async (e) => {
+        // Calcular en qué celda se hizo clic
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
+
+        const col = Math.floor(mouseX / (canvas.width / GRID_COLS));
+        const row = Math.floor(mouseY / (canvas.height / GRID_ROWS));
+
+        if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
+          // Convertir a comando: col 0 -> 'a', row 0 -> '1'
+          const letter = String.fromCharCode(97 + col); // 'a' para col 0
+          const number = row + 1;
+          const command = `!${letter}${number}`; // ej: !a12
+
+          console.log('Clic en celda', letter, number, 'comando:', command);
+          await sendChatMessage(command);
+        }
+      });
+
+      // Redibujar si la ventana cambia de tamaño (opcional)
+      window.addEventListener('resize', drawGrid);
+    })();
+  </script>
+</body>
+</html>
