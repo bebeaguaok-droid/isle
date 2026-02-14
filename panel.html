@@ -83,35 +83,37 @@
       let channelId = null;
       let chatToken = null;
       let viewerId = null;
-      let clientId = null; // Se reemplazará con el Client ID de la extensión
+      // Reemplaza con tu Client ID real
+      const CLIENT_ID = 'p044zcurd8w9vn2fjcd5fw13o7o205'; // <-- YA ESTÁ TU CLIENT ID
+
+      // --- LOGS DE DEPURACIÓN ---
+      console.log('Inicializando extensión...');
 
       // Escuchar el evento de autorización de Twitch
       Twitch.ext.onAuthorized((auth) => {
-        // auth.channelId es el ID del canal (tu canal)
         channelId = auth.channelId;
-        // auth.token es el JWT del viewer (no sirve para chat, pero podemos obtener el viewer después)
-        console.log('Autorizado, channelId:', channelId);
+        console.log('onAuthorized - channelId:', channelId);
+        console.log('onAuthorized - token (opaco):', auth.token ? 'recibido' : 'no recibido');
       });
 
       // El objeto viewer proporciona el token con los scopes solicitados
       Twitch.ext.viewer.on('authorized', () => {
-        // Twitch.ext.viewer.helixToken es el token que necesitamos para la API de chat
         chatToken = Twitch.ext.viewer.helixToken;
         viewerId = Twitch.ext.viewer.id;
-        console.log('Viewer autorizado, token obtenido');
+        console.log('viewer.onAuthorized - chatToken:', chatToken ? 'obtenido' : 'NO obtenido');
+        console.log('viewer.onAuthorized - viewerId:', viewerId);
       });
 
       // Función para enviar mensaje al chat usando la API de Twitch
       async function sendChatMessage(message) {
+        console.log('sendChatMessage llamado con:', message);
+        console.log('Estado actual - channelId:', channelId, 'chatToken:', chatToken ? 'sí' : 'no', 'viewerId:', viewerId, 'CLIENT_ID:', CLIENT_ID);
+
         if (!channelId || !chatToken || !viewerId) {
           console.error('Faltan datos para enviar mensaje');
           alert('La extensión no está completamente autorizada. Por favor, recarga la página.');
           return;
         }
-
-        // El Client ID lo obtienes del panel de desarrollador de Twitch
-        // Reemplázalo con el tuyo (más abajo se indica dónde encontrarlo)
-        const CLIENT_ID = 'p044zcurd8w9vn2fjcd5fw13o7o205'; // <-- CAMBIA ESTO
 
         const url = 'https://api.twitch.tv/helix/chat/messages';
         const body = {
@@ -119,6 +121,8 @@
           sender_id: viewerId,
           message: message
         };
+
+        console.log('Enviando fetch a:', url, 'con body:', body);
 
         try {
           const response = await fetch(url, {
@@ -131,23 +135,26 @@
             body: JSON.stringify(body)
           });
 
+          console.log('Respuesta recibida, status:', response.status);
+
           if (!response.ok) {
             const errorText = await response.text();
             console.error('Error al enviar mensaje:', response.status, errorText);
-            alert('Error al enviar el comando. Asegúrate de que la extensión tenga permiso para enviar mensajes.');
+            alert('Error al enviar el comando. Código: ' + response.status);
           } else {
-            console.log('Comando enviado al chat:', message);
+            console.log('Comando enviado al chat correctamente:', message);
             // Opcional: feedback visual breve
             canvas.style.borderColor = '#ff0';
             setTimeout(() => canvas.style.borderColor = '#0f0', 200);
           }
         } catch (error) {
-          console.error('Error de red:', error);
+          console.error('Error de red en fetch:', error);
         }
       }
 
       // Manejador de clics en el canvas
       canvas.addEventListener('click', async (e) => {
+        console.log('Click detectado en canvas');
         // Calcular en qué celda se hizo clic
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
@@ -159,19 +166,30 @@
         const col = Math.floor(mouseX / (canvas.width / GRID_COLS));
         const row = Math.floor(mouseY / (canvas.height / GRID_ROWS));
 
+        console.log('Coordenadas:', { mouseX, mouseY, col, row });
+
         if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
           // Convertir a comando: col 0 -> 'a', row 0 -> '1'
           const letter = String.fromCharCode(97 + col); // 'a' para col 0
           const number = row + 1;
           const command = `!${letter}${number}`; // ej: !a12
 
-          console.log('Clic en celda', letter, number, 'comando:', command);
+          console.log('Clic en celda válida:', letter, number, 'comando:', command);
           await sendChatMessage(command);
+        } else {
+          console.log('Clic fuera de la cuadrícula');
         }
       });
 
       // Redibujar si la ventana cambia de tamaño (opcional)
       window.addEventListener('resize', drawGrid);
+
+      // --- PRUEBA AUTOMÁTICA (opcional, comentar si no se desea) ---
+      // setTimeout(() => {
+      //   console.log('Enviando mensaje de prueba automático...');
+      //   sendChatMessage('!prueba desde extensión');
+      // }, 10000);
+
     })();
   </script>
 </body>
